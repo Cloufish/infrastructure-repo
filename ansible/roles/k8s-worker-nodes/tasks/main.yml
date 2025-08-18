@@ -1,0 +1,33 @@
+---
+- name: Read kubeadm join command stored in token file locally
+  local_action:
+    module: shell
+    cmd: cat "{{ token_file }}"
+  register: join_command
+  when: token_file is defined
+
+- name: Save the join command to a /tmp/join-worker-nodes.sh file
+  copy:
+    content: "{{ join_command.stdout }}"
+    dest: /tmp/join-worker-nodes.sh
+
+- name: Ensure /tmp/join-worker-nodes.sh script is executable
+  file:
+    path: "/tmp/join-worker-nodes.sh"
+    mode: '0755'
+
+- name: Resetting kubeadm on worker nodes (if needed)
+  command: kubeadm reset -f
+  become: true
+  ignore_errors: true
+
+- name: Joining worker nodes to the Kubernetes cluster
+  command: sudo sh "/tmp/join-worker-nodes.sh"
+  register: join_result
+  ignore_errors: true
+
+- name: Check join result
+  fail:
+    msg: "Failed to join the Kubernetes cluster"
+  when: 
+    - join_result.rc != 0

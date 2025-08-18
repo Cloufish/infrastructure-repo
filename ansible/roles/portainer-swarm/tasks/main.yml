@@ -1,0 +1,58 @@
+---
+- name: Verify stacks directory exists (on first swarm node)
+  when: inventory_hostname == groups['swarm_managers'][0]
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/stacks"
+    state: directory
+
+- name: Verify Portainer volume path (on first swarm node)
+  when: inventory_hostname == groups['swarm_managers'][0]
+  become: true
+  become_method: sudo
+  ansible.builtin.file:
+    path: "{{ gluster_mount_path }}/docker-volumes/{{ portainer_gfs_subdir }}"
+    state: directory
+
+- name: Generate admin password hash
+  when: inventory_hostname == groups['swarm_managers'][0]
+  ansible.builtin.shell: echo $(htpasswd -nBb admin {{portainer_admin_password}}) | cut -d ":" -f 2 | sed -e s/\\$/\\$\\$/g
+  register: portainerpassword
+
+- name: Create docker-compose stack file (on first swarm node)
+  when: inventory_hostname == groups['swarm_managers'][0]
+  ansible.builtin.template:
+    src: portainer-agent-stack.j2
+    dest: /home/{{ ansible_user }}/stacks/portainer-agent-stack.yml
+    mode: "0755"
+
+- name: Install Python Libraries using apt
+  when: inventory_hostname == groups['swarm_managers'][0]
+  become: true
+  ansible.builtin.apt:
+    state: present
+    pkg:
+      - python3-jsondiff
+      - python3-yaml
+    update_cache: true
+
+# - name: Install jsondiff Python library
+#   when: inventory_hostname == groups['swarm_managers'][0]
+#   become: true
+#   become_method: sudo
+#   pip:
+#     name: jsondiff
+
+# - name: Install pyyaml Python library
+#   when: inventory_hostname == groups['swarm_managers'][0]
+#   become: true
+#   become_method: sudo
+#   pip:
+#     name: pyyaml
+
+- name: Deploy stack from a compose file (on first swarm node)
+  when: inventory_hostname == groups['swarm_managers'][0]
+  community.docker.docker_stack:
+    state: present
+    name: portainer-swarm
+    compose:
+      - /home/{{ ansible_user }}/stacks/portainer-agent-stack.yml

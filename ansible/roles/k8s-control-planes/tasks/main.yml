@@ -1,0 +1,223 @@
+---
+
+
+- name: Reset Kubernetes cluster
+  shell: kubeadm reset --force
+  ignore_errors: true
+  become: true
+
+- name: Stop kubelet and containerd services
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - kubelet
+    - containerd
+  become: true
+
+- name: Remove CNI and kubelet directories
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/lib/cni/
+    - /var/lib/kubelet/
+    - /etc/cni/
+  become: true
+
+- name: Bring down interfaces cni0, flannel.1, and docker0
+  command: "ifconfig {{ item }} down"
+  ignore_errors: yes
+  loop:
+    - cni0
+    - flannel.1
+    - docker0
+  become: true
+
+- name: Delete interfaces cni0 and flannel.1
+  command: "ip link delete {{ item }}"
+  ignore_errors: yes
+  loop:
+    - cni0
+    - flannel.1
+  become: true
+
+- name: Start kubelet and containerd services
+  systemd:
+    name: "{{ item }}"
+    state: started
+  loop:
+    - kubelet
+    - containerd
+  become: true
+
+- name: Remove etcd directory
+  shell: rm -rf /var/lib/etcd
+  ignore_errors: true
+  become: true
+
+- name: Reboot the server
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ DELAY_VAL }}"
+  become: true
+
+# - name: Initialize new K8s Control Plane # TODO: FIX USING "register:" to have 'kubeadm-control-plane-join' command and `kubeadm-worker-plane-join` command with `--cri-socket=unix:///var/run/cri-dockerd.sock`
+#   become: true
+#   shell: kubeadm init --control-plane-endpoint={{ inventory_hostname }}:6443 --upload-certs --pod-network-cidr=10.244.0.0/16 --cri-socket=unix:///var/run/cri-dockerd.sock
+#   when: "not kubeadm_check.stdout or 'Ready' not in kubeadm_check.stdout" and inventory_hostname == groups['k8s_control_planes'][0]
+#   run_once: true
+#   register: kubeadm_init
+#   ignore_errors: true 
+
+# - name: Join other control planes to the cluster
+#   command: "{{ lookup('file', '/home/{{ ansible_user }}/kubeadm_join') }}"
+#   become: true
+#   when: "not kubeadm_check.stdout or 'Ready' not in kubeadm_check.stdout"
+#   ignore_errors: true
+
+
+
+- name: Initializing Kubernetes cluster
+  shell: >
+    kubeadm init --pod-network-cidr={{ k8s_cidr }} --control-plane-endpoint 192.168.1.160:6443
+  register: kubeadm_init
+  become: true
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+  any_errors_fatal: true
+
+- name: Ensure .kube directory exists
+  file:
+    path: "/home/{{ansible_user}}/.kube/"
+    state: directory
+    mode: 0755
+  become: false
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+
+- name: Copy /etc/kubernetes/admin.conf to user's .kube/config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/{{ansible_user}}/.kube/config
+    owner: "{{ ansible_env.USER }}"
+    group: "{{ ansible_env.USER }}"
+    remote_src: true
+  become: true
+  ignore_errors: true
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+
+- name: Store kubeadm init output
+  local_action:
+    module: copy
+    content: "{{ kubeadm_init.stdout }}"
+    dest: "{{ token_file }}"
+  when: 
+    - kubeadm_init is defined
+    - "'stdout' in kubeadm_init"
+
+# - name: Save kubeadm join command
+#   lineinfile:
+#     path: "/home/{{ ansible_user }}/kubeadm_join"
+#     line: "{{ kubeadm_init.stdout_lines[4] }}"
+#   become: true
+#   when: kubeadm_check.rc != 0 and inventory_hostname == groups['k8s_control_planes'][0]
+#   ignore_errors: true
+
+# kubeadm join CONTROL_PLANE_ENDPOINT:6443 --token TOKEN --discovery-token-ca-cert-hash sha256:... --control-plane --certificate-key CERT_KEY --cri-socket=unix:///var/run/cri-dockerd.sock
+## --control-plane turns a second, third node to control-plane
+##  sudo kubeadm join 192.168.1.163:6443 --token rnej62.ea2fdxhbtolo8at5         --discovery-token-ca-cert-hash sha256:9a45f6f7f3497e999b6b94661e398787891565396c48783e808a4bc54c9b9d8e --cri-socket=unix:///var/run/cri-dockerd.sock
+## sudo kubeadm join 192.168.1.163:6443 --token <token> --discovery-token-ca-cert-hash sha256:9a45f6f7f3497e999b6b94661e398787891565396c48783e808a4bc54c9b9d8e --control-plane --certificate-key edf47f3b4c5277d2812b4a7830ce3adbfb3ccf7c5476c0101b988d2c9e6f2ca4
+## sudo kubeadm join 192.168.1.163:6443 --token rnej62.ea2fdxhbtolo8at5  --discovery-token-ca-cert-hash sha256:9a45f6f7f3497e999b6b94661e398787891565396c48783e808a4bc54c9b9d8e --control-plane --certificate-key edf47f3b4c5277d2812b4a7830ce3adbfb3ccf7c5476c0101b988d2c9e6f2ca4 --cri-socket=unix:///var/run/cri-dockerd.sock
+
+- name: Check if Kubernetes cluster is ready
+  shell: kubectl get nodes
+  register: kubectl_get_nodes
+  retries: 30
+  delay: 10
+  until: kubectl_get_nodes.rc == 0
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+
+- name: Generate a new join token and output to a local file
+  shell: kubeadm token create --print-join-command
+  register: join_command
+  run_once: true
+  become: true
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+
+- name: Ensure the /tmp/join-worker-nodes.sh file is empty before writing
+  file:
+    path: /tmp/join-worker-nodes.sh
+    state: absent
+
+- name: Save the join command to a /tmp/join-worker-nodes.sh file
+  copy:
+    content: "{{ join_command.stdout }}"
+    dest: /tmp/join-worker-nodes.sh
+
+- name: Generate certificate key
+  shell: kubeadm init phase upload-certs --upload-certs
+  register: cert_key_output
+  become: true
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+
+- name: Extract certificate key
+  set_fact:
+    certificate_key: "{{ cert_key_output.stdout_lines[-1] }}"
+  when: inventory_hostname == groups['k8s_control_planes'][0]
+
+
+- name: Ensure the /tmp/join-control-nodes.sh file is empty before writing
+  file:
+    path: /tmp/join-control-nodes.sh
+    state: absent
+
+- name: Save the join command to a /tmp/join-control-nodes.sh file
+  copy:
+    content: "{{ join_command.stdout }} --certificate-key {{ certificate_key }} --control-plane"
+    dest: /tmp/join-control-nodes.sh
+
+
+# - name: Join other control node clusters 
+#   command: > # We use command because shell: cannot process big commands
+#     "{{ join_command.stdout }} 
+#     --control-plane 
+#     --certificate-key {{ certificate_key }}"
+#   when: inventory_hostname != groups['k8s_control_planes'][0]
+#   register: join_result
+#   become: true
+
+- name: Ensure join script is executable
+  file:
+    path: "/tmp/join-control-nodes.sh"
+    mode: '0755'
+
+- name: Joining control plane nodes to the Kubernetes cluster
+  command: sudo sh "/tmp/join-control-nodes.sh"
+  register: join_result
+  when: inventory_hostname != groups['k8s_control_planes'][0]
+  any_errors_fatal: true
+
+- name: Ensure .kube directory exists
+  file:
+    path: "/home/{{ansible_user}}/.kube/"
+    state: directory
+    mode: 0755
+  become: false
+  when: inventory_hostname != groups['k8s_control_planes'][0]
+
+- name: Copy /etc/kubernetes/admin.conf to user's .kube/config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /home/{{ansible_user}}/.kube/config
+    owner: "{{ ansible_env.USER }}"
+    group: "{{ ansible_env.USER }}"
+    remote_src: true
+  become: true
+  ignore_errors: true
+  when: inventory_hostname != groups['k8s_control_planes'][0]
+
+- name: Export KUBECONFIG variable
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: 'export KUBECONFIG=/home/{{ansible_user}}/.kube/config'
+    create: yes
+    state: present
+  become: false

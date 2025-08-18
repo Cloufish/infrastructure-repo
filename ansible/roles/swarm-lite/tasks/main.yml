@@ -1,0 +1,3 @@
+---
+- ansible.builtin.import_tasks: leader.yml
+- ansible.builtin.import_tasks: manager.yml

@@ -1,0 +1,11 @@
+---
+template_haproxy_name: ubuntu-cloudinit-haproxy
+template_haproxy_image_name: lunar-server-cloudimg-amd64.img
+template_haproxy_vmid: 8000
+template_haproxy_memory: 2048
+
+template_swarm_name: ubuntu-cloudinit-swarm
+template_swarm_image_name: lunar-server-cloudimg-amd64.img
+template_swarm_vmid: 8001
+template_swarm_second_disk_size: 60
+template_swarm_memory: 5000

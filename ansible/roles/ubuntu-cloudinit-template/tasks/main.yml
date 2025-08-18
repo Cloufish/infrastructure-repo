@@ -1,0 +1,108 @@
+---
+- hosts: proxmox
+  become: true
+  vars_files: "{{ playbook_dir }}/proxmox-temp-conf.yml"
+  tasks:
+    - name: "Check If Ubuntu CloudImage is present"
+      stat:
+        path: "./{{template_haproxy_image_name}}"
+      register: cloud_image_present
+
+    - name: "Download Ubuntu CloudImage"
+      when: cloud_image_present == false
+      ansible.builtin.get_url:
+        url: "https://cloud-images.ubuntu.com/lunar/current/{{template_haproxy_image_name}}"
+        dest: "."
+
+    - name: "Create a new machine"
+      shell: |
+        qm create {{template_haproxy_vmid}} --memory {{template_haproxy_memory}} --core 2 --name {{template_haproxy_name}} --net0 virtio,bridge=vmbr0
+
+    - name: "Import the downloaded Ubuntu disk to local-lvm storage"
+      shell: |
+        qm importdisk {{template_haproxy_vmid}} {{template_haproxy_image_name}} local-lvm
+
+    - name: "Attach the new disk to the vm as a scsi drive on the scsi controller"
+      shell: |
+        qm set {{template_haproxy_vmid}} --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-{{template_haproxy_vmid}}-disk-0
+
+    - name: "Resize default disk"
+      shell: |
+        qm resize {{template_haproxy_vmid}} scsi0 +100G
+
+    - name: "Add cloud init drive"
+      shell: |
+        qm set {{template_haproxy_vmid}} --ide2 local-lvm:cloudinit
+
+    - name: "Make the cloud init drive bootable and restrict BIOS to boot form disk only"
+      shell: |
+        qm set {{template_haproxy_vmid}} --boot c --bootdisk scsi0
+
+    - name: "Add Serial Console"
+      shell: |
+        qm set {{template_haproxy_vmid}} --serial0 socket --vga serial0
+
+    - name: "Setting On Start-On-Boot option to True"
+      shell: |
+        qm set {{template_haproxy_vmid}} --onboot 1
+
+    - name: "Create a template_haproxy"
+      shell: |
+        qm template {{template_haproxy_vmid}}
+
+
+- hosts: proxmox
+  become: true
+  vars_files: "{{ playbook_dir }}/proxmox-temp-conf.yml"
+  tasks:
+    - name: "Check If Ubuntu CloudImage is present"
+      stat:
+        path: "./{{template_swarm_image_name}}"
+      register: cloud_image_present
+
+    - name: "Download Ubuntu CloudImage"
+      when: cloud_image_present == false
+      ansible.builtin.get_url:
+        url: "https://cloud-images.ubuntu.com/lunar/current/{{template_swarm_image_name}}"
+        dest: "."
+
+    - name: "Create a new machine"
+      shell: |
+        qm create {{template_swarm_vmid}} --memory {{template_swarm_memory}} --core 2 --name {{template_swarm_name}} --net0 virtio,bridge=vmbr0
+
+    - name: "Import the downloaded Ubuntu disk to local-lvm storage"
+      shell: |
+        qm importdisk {{template_swarm_vmid}} {{template_swarm_image_name}} local-lvm
+
+    - name: "Attach the new disk to the vm as a scsi drive on the scsi controller"
+      shell: |
+        qm set {{template_swarm_vmid}} --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-{{template_swarm_vmid}}-disk-0
+
+    - name: "Resize default disk"
+      shell: |
+        qm resize {{template_swarm_vmid}} scsi0 +17G
+
+    - name: "Create additional Disk of {{template_swarm_second_disk_size}}GB"
+      shell: |
+        qm set {{template_swarm_vmid}} -scsi1 local-lvm:{{template_swarm_second_disk_size}}
+
+
+    - name: "Add cloud init drive"
+      shell: |
+        qm set {{template_swarm_vmid}} --ide2 local-lvm:cloudinit
+
+    - name: "Make the cloud init drive bootable and restrict BIOS to boot form disk only"
+      shell: |
+        qm set {{template_swarm_vmid}} --boot c --bootdisk scsi0
+
+    - name: "Add Serial Console"
+      shell: |
+        qm set {{template_swarm_vmid}} --serial0 socket --vga serial0
+
+    - name: "Setting On Start-On-Boot option to True"
+      shell: |
+        qm set {{template_swarm_vmid}} --onboot 1
+
+    - name: "Create a template_swarm"
+      shell: |
+        qm template {{template_swarm_vmid}}

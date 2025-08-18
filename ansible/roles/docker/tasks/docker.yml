@@ -1,0 +1,86 @@
+---
+- name: Remove old versions of Docker
+  become: true
+  become_method: sudo
+  ansible.builtin.apt:
+    state: absent
+    pkg:
+      - docker
+      - docker-doc
+      - docker-engine
+      - docker-compose-v2
+      - docker-compose
+      - cri-dockerd
+      - podman-docker
+      - docker.io
+      - runc
+      - containerd.io
+    force_apt_get: true
+
+- name: Update apt and install required packages
+  become: true
+  ansible.builtin.apt:
+    update_cache: true
+    name: ca-certificates,curl
+    state: present
+
+- name: Ensure /etc/apt/keyrings directory exists
+  become: true
+  ansible.builtin.command: install -m 0755 -d /etc/apt/keyrings
+- name: Add Docker's official GPG key
+  become: true
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "a+r"
+
+- name: Add Docker repository
+  become: true
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
+    state: present
+    update_cache: true
+
+# - name: Install containerd GPG key
+#   become: true
+#   become_method: sudo
+#   shell: "curl -fsSLo /usr/share/keyrings/docker-archive-keyring.asc https://download.docker.com/linux/ubuntu/gpg "
+
+# - name: Add containerd repository to apt
+#   become: true
+#   become_method: sudo
+#   shell: "echo 'deb [signed-by=/usr/share/keyrings/docker-archive-keyring.asc] https://download.docker.com/linux/ubuntu bionic stable' | tee /etc/apt/sources.list.d/docker.list"
+
+# - name: Allow connections on multiple ports
+#   ansible.builtin.iptables:
+#     chain: INPUT
+#     protocol: '{{ item }}'
+#     destination_ports:
+#       - "2377"
+#       - "7946"
+#       - "4789"
+#     jump: ACCEPT
+#   with_items: ['tcp', 'udp']
+# failed: [192.168.1.141] (item=udp) => {"ansible_loop_var": "item", "changed": false, "cmd": "/usr/sbin/iptables -t filter -A INPUT -p udp -j ACCEPT -m multiport --dports 2377", "item": "udp", "msg": "iptables v1.8.7 (nf_tables): Couldn't load match `multiport':No such file or directory\n\nTry `iptables -h' or 'iptables --help' for more information.", "rc": 2, "stderr": "iptables v1.8.7 (nf_tables): Couldn't load match `multiport':No such file or directory\n\nTry `iptables -h' or 'iptables --help' for more information.\n", "stderr_lines": ["iptables v1.8.7 (nf_tables): Couldn't load match `multiport':No such file or directory", "", "Try `iptables -h' or 'iptables --help' for more information."], "stdout": "", "stdout_lines": []}
+
+- name: Install Docker
+  become: true
+  become_method: sudo
+  ansible.builtin.apt:
+    pkg:
+      - docker-ce
+      - docker-ce-cli
+      - docker-compose
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    force_apt_get: true
+    update_cache: true
+
+- name: Add "{{ansible_user}}" user to "docker" group
+  become: true
+  become_method: sudo
+  ansible.builtin.command: "adduser {{ansible_user}} docker"
+- name: Waiting for Docker service to become available
+  ansible.builtin.wait_for:
+    path: /var/run/docker.sock

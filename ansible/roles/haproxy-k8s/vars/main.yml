@@ -1,0 +1,15 @@
+host_entries:
+  - ip: "192.168.1.160"  # Updated IP for haproxy
+    hostname: "haproxy"
+  - ip: "192.168.1.161"
+    hostname: "k3s-control-plane-1"
+  - ip: "192.168.1.162"
+    hostname: "k3s-control-plane-2"
+  - ip: "192.168.1.163"
+    hostname: "k3s-control-plane-3"
+  - ip: "192.168.1.164"
+    hostname: "k3s-worker-node-1"
+  - ip: "192.168.1.165"
+    hostname: "k3s-worker-node-2"
+  - ip: "192.168.1.166"
+    hostname: "k3s-worker-node-3"

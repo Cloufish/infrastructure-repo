@@ -1,0 +1,57 @@
+---
+- name: Install HAProxy
+  become: true
+  become_method: sudo
+  ansible.builtin.apt:
+    pkg:
+      - haproxy
+    state: latest
+    force_apt_get: true
+    update_cache: true
+
+# - name: Copy cert generation script to host
+#   become: true
+#   become_method: sudo
+#   template:
+#     src: generate_certs.j2
+#     dest: /tmp/generate_certs.sh
+#     mode: '0755'
+
+- name: Update /etc/hosts with all required entries for haproxy
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^(127\\.0\\.0\\.1 localhost|127\\.0\\.1\\.1 {{ item.hostname }}|{{ item.ip }} {{ item.hostname }})$"
+    line: "{{ item.ip }} {{ item.hostname }}"
+    state: present
+  loop: "{{ host_entries }}"
+
+# - name: Run cert generation script
+#   become: true
+#   become_method: sudo
+#   shell: /tmp/generate_certs.sh
+
+- name: Create HAProxy config file
+  become: true
+  become_method: sudo
+  ansible.builtin.template:
+    src: haproxy.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: "0755"
+
+- name: Enter LF on last line 
+  shell: echo "" >> /etc/haproxy/haproxy.cfg
+  become: true
+
+- name: Validate the haproxy config 
+  shell: haproxy -f /etc/haproxy/haproxy.cfg -c -V
+  become: true
+
+- name: Restart HAProxy service
+  become: true
+  become_method: sudo
+  ansible.builtin.systemd:
+    name: haproxy
+    enabled: true
+    state: restarted
+

@@ -1,0 +1,188 @@
+---
+- name: Disable swap
+  become: true
+  shell: sudo swapoff -a
+
+- name: Comment out swap entries in /etc/fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^([^#].*\s+swap\s+)'
+    line: '#\1'
+    backrefs: yes
+
+- name: Copy /etc/hosts template 
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+  become: true
+
+- name: modprobe
+  become: true
+  shell: |
+    modprobe overlay
+    modprobe br_netfilter
+
+- name: Set system configuration for Kubernetes Networking 
+  become: true
+  template: 
+    src: 99-kubernetes-cri.conf 
+    dest: /etc/sysctl.d/99-kubernetes-cri.conf
+
+- name: Set system configuration for Kubernetes Networking 
+  become: true
+  template: 
+    src: k8s.conf
+    dest: /etc/modules-load.d/k8s.conf 
+
+- name: Apply new settings
+  become: true
+  shell: sysctl --system
+
+- name: Install bash-completion and other dependencies
+  become: true
+  become_method: sudo
+  apt:
+    pkg:
+      - bash-completion
+      - ca-certificates
+      - apt-transport-https
+      - curl
+      - yq # For parsing yaml files 
+      - gnupg-agent # For apt-key add
+      - software-properties-common # For add-apt-repository "deb ..."
+      - python3-pip
+      - apache2-utils
+      - net-tools
+    state: present
+    update_cache: true 
+
+
+- name: Ensure /etc/apt/keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download the Kubernetes signing key 
+  ansible.builtin.get_url:
+    url: https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key
+    dest: /tmp/kubernetes-release.key
+    mode: '0644'
+  become: true  
+
+- name: Remove previous /etc/apt/keyrings/kubernetes-apt-keyring.gpg 
+  ansible.builtin.file: 
+    path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    state: absent 
+  become: true
+
+- name: Add the Kubernetes signing key  # TODO: FIX PAUSING THE SCRIPT
+  ansible.builtin.command:
+    cmd: gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-release.key
+  become: true
+
+- name: Add Kubernetes APT repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    content: |
+      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /
+    mode: '0644'
+  become: true
+
+- name: Update apt package index after adding Kubernetes repository
+  ansible.builtin.apt:
+    update_cache: yes
+  become: true
+
+- name: Upgrade packages with apt 
+  ansible.builtin.apt:
+    upgrade: dist
+    update_cache: yes
+  become: true
+
+- name: Install kubelet, kubeadm, and kubectl
+  ansible.builtin.apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: present
+  become: true
+
+- name: Enable kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: yes
+    state: started
+  become: true
+
+- name: Ensure bash-completion is sourced in .bashrc
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: 'source /usr/share/bash-completion/bash_completion'
+    create: yes
+    state: present
+  become: no
+
+- name: Ensure bash-completion is sourced in .bashrc
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "source <(kubectl completion bash)"
+    create: yes
+    state: present
+  become: no
+
+- name: Add alias for kubectl 
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "alias k=kubectl"
+    create: yes
+    state: present
+  become: no
+
+- name: Add alias for kubectl 
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "alias kn=kubectl config set-context --current --namespace="
+    create: yes
+    state: present
+  become: no
+
+- name: Add autocompletion for the k=kubectl alias
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "complete -o default -F __start_kubectl k"
+    create: yes
+    state: present
+  become: no
+
+- name: Download kubectl convert plugin
+  become: true
+  shell: curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert"
+
+- name: Download sha256 checksum of the kubectl convert plugin binary
+  become: true
+  shell: curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert.sha256"
+
+- name: Validate the kubectl against the checksum
+  become: true
+  shell: echo "$(cat kubectl-convert.sha256) kubectl-convert" | sha256sum --check
+
+- name: Install kubectl-convert
+  become: true
+  shell: install -o root -g root -m 0755 kubectl-convert /usr/local/bin/kubectl-convert
+
+- name: Configure Docker daemon for Kubernetes
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "exec-opts": ["native.cgroupdriver=systemd"],
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "100m"
+        },
+        "storage-driver": "overlay2"
+      }
+  become: true
+

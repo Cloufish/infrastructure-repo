@@ -1,0 +1,98 @@
+---
+- name: Verify stacks directory exists (on first swarm node)
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/stacks"
+    state: directory
+
+- name: Generate admin password hash
+  ansible.builtin.shell: echo $(htpasswd -nb {{traefik_admin_user}} {{traefik_admin_password}}) | sed -e s/\\$/\\$\\$/g
+  register: traefikpassword
+
+- name: Create docker-compose stack file (on first swarm node)
+  ansible.builtin.template:
+    src: traefik-stack.j2
+    dest: /home/{{ ansible_user }}/stacks/traefik-stack.yml
+    mode: "0755"
+
+- name: Install Python Libraries using apt
+  become: true
+  ansible.builtin.apt:
+    state: present
+    pkg:
+      - python3-jsondiff
+      - python3-yaml
+    update_cache: true
+
+- name: Disable Nginx service
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: false
+    state: stopped
+  ignore_errors: true
+
+# - name: Install jsondiff Python library
+#   when: inventory_hostname == groups['swarm_managers'][0]
+#   become: true
+#   become_method: sudo
+#   pip:
+#     name: jsondiff
+
+# - name: Install pyyaml Python library
+#   become: true
+#   become_method: sudo
+#   pip:
+#     name: pyyaml
+- name: Verify "/home/{{ansible_user}}/traefik/certs/" directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/traefik/certs/"
+    state: directory
+
+- name: Verify "//home/{{ansible_user}}/traefik/logs" directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/traefik/logs"
+    state: directory
+
+- name: Verify "/home/{{ansible_user}}/traefik/configuration/ directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/traefik/configuration/"
+    state: directory
+
+# - name: Copy certificates.j2
+#   template:
+#     src: "certificates.j2"
+#     dest: /home/{{ansible_user}}/traefik/configuration/certificates.yml
+#     mode: '0755'
+
+- name: Copy traefik-conf.yml
+  ansible.builtin.template:
+    src: "traefik-conf.j2"
+    dest: /home/{{ ansible_user }}/traefik/traefik-conf.yml
+    mode: "0755"
+
+- name: Copy traefik-conf.yml
+  ansible.builtin.template:
+    src: "external-services.j2"
+    dest: /home/{{ ansible_user }}/traefik/external-services.yml
+    mode: "0755"
+
+- name: Deploy stack from a compose file (on first swarm node)
+  when: inventory_hostname == groups['swarm_managers'][0]
+  community.docker.docker_stack:
+    state: present
+    name: traefik-swarm
+    compose:
+      - /home/{{ ansible_user }}/stacks/traefik-stack.yml
+
+- name: Wait for server to restart
+  become: true
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ DELAY_VAL }}"
+  ignore_errors: true
+
+# - name: Restart Docker service
+#   become: true
+#   become_method: sudo
+#   systemd:
+#     name: docker
+#     enabled: yes
+#     state: restarted

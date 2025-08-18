@@ -1,0 +1,25 @@
+---
+- name: Install fluxcd
+  shell: curl -s https://fluxcd.io/install.sh | sudo bash
+
+- name: Preflight Checks for Flux 
+  shell: flux check --pre
+
+- name: Add flux autocompletion to .profile
+  ansible.builtin.lineinfile:
+    path: "/home/{{ ansible_user }}/.profile"
+    line: 'source <(flux completion bash)'
+    state: present
+    insertafter: EOF
+    create: yes
+
+- name: Bootstrap FluxCD 
+  shell: | 
+    echo "{{ FLUX_CD_PAT }}" | flux bootstrap github \
+      --token-auth \
+      --owner=Cloufish \
+      --repository=k8s-home-ops \
+      --branch=main \
+      --path=kubernetes \
+      --personal 
+  run_once: true

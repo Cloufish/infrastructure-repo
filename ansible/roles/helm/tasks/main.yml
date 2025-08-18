@@ -1,0 +1,47 @@
+
+- name: Update APT package index
+  ansible.builtin.apt:
+    update_cache: yes
+  become: true 
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - curl
+      - gnupg
+    state: present
+  become: true
+
+- name: Create keyrings directory for Helm
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: true 
+
+- name: Download and dearmor Helm GPG key
+  ansible.builtin.shell: |
+    curl https://baltocdn.com/helm/signing.asc | gpg --dearmor -o /etc/apt/keyrings/helm.gpg
+  args:
+    creates: /etc/apt/keyrings/helm.gpg
+  become: true
+
+- name: Add Helm APT repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/helm-stable.list
+    content: |
+      deb [signed-by=/etc/apt/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main
+    mode: '0644'
+  become: true
+
+- name: Update APT cache after adding Helm repo
+  ansible.builtin.apt:
+    update_cache: yes
+  become: true
+
+- name: Install Helm
+  ansible.builtin.apt:
+    name: helm
+    state: present
+  become: true

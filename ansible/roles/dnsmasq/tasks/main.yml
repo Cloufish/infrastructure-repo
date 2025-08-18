@@ -1,0 +1,12 @@
+---
+- name: Copy 42-reverse-proxied
+  ansible.builtin.template:
+    src: 42-reverse-proxied-subdomains.conf
+    dest: /etc/dnsmasq.d/42-reverse-proxied-subdomains.conf
+    mode: "0755"
+
+- name: Copy 99-local-ttl.conf
+  ansible.builtin.template:
+    src: 99-local-ttl.conf
+    dest: 99-local-ttl.conf
+    mode: "0755"

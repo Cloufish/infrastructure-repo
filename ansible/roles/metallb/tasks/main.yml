@@ -1,0 +1,63 @@
+---
+- name: Enable strict ARP mode 
+  shell: >
+    kubectl get configmap kube-proxy -n kube-system -o yaml | \
+    sed -e "s/strictARP: false/strictARP: true/" | \
+    kubectl apply -f - -n kube-system
+  run_once: true
+
+- name: Add stable chart repo
+  kubernetes.core.helm_repository:
+    name: "{{ metallb_app_name }}"
+    repo_url: "{{ metallb_app_repo }}"
+
+- name: Separately update the repository cache
+  kubernetes.core.helm:
+    name: dummy
+    namespace: kube-system
+    state: absent
+    update_repo_cache: true
+
+- name: Ensure /home/{{ ansible_user }}/manifests/ directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}"
+    state: directory 
+
+- name: Copy values.yml file
+  template: 
+    src: values.j2
+    dest: "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}/values.yml"
+    mode: "0755"
+
+- name: Deploy latest version of chart
+  kubernetes.core.helm:
+    name: "{{ metallb_app_name }}"
+    chart_ref: "{{ metallb_app_name }}/{{ metallb_app_name }}"
+    release_namespace: "{{ metallb_app_name }}"
+    create_namespace: true
+    values_files:
+      - "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}/values.yml"
+  run_once: true
+
+- name: Copy MetalLB IP Pool Config
+  template:
+    src: metallb-ip-pool.j2
+    dest: "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}/metallb-ip-pool.yml"
+
+- name: Apply MetalLB IP Pool Config
+  kubernetes.core.k8s: 
+    state: present
+    src: "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}/metallb-ip-pool.yml"
+  run_once: true
+
+- name: Copy MetalLB L2 Advertisement Config
+  template:
+    src: metallb-l2-advertisement.j2
+    dest: "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}/metallb-l2-advertisement.yml"
+
+- name: Apply MetalLB L2 Advertisement Config
+  kubernetes.core.k8s: 
+    state: present
+    src: "/home/{{ ansible_user }}/manifests/{{ metallb_app_name }}/metallb-l2-advertisement.yml"
+  run_once: true
+  

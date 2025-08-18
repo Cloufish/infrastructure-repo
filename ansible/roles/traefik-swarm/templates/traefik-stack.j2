@@ -1,0 +1,75 @@
+version: '3.5'
+
+services:
+  reverse-proxy:
+    image: {{traefik_app_image}}
+    hostname: swarm-lite
+    ports:
+    #   # listen on host ports without ingress network
+    #   - target: 80
+    #     published: 80
+    #     protocol: tcp
+    #     mode: host
+    #   - target: 443
+    #     published: 443
+    #     protocol: tcp
+    #     mode: host
+    - "80:80"
+    - "8080:8080"
+    - "443:443"
+    volumes:
+      - /home/{{ansible_user}}/traefik/traefik-conf.yml:/etc/traefik/traefik.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/log:/var/log
+      - /etc/localtime:/etc/localtime:ro # To get timezones
+      - /home/{{ansible_user}}/traefik/logs/:/logs/
+      - /home/{{ansible_user}}/traefik/acme.json:/acme.json
+    environment:
+      - TZ={{default_timezone}}
+      - CLOUDFLARE_EMAIL=cloufisz@gmail.com
+      - CF_DNS_API_TOKEN={{CF_DNS_API_TOKEN}} #Added new variable
+    networks:
+      - {{traefik_network_name}}
+      - traefik_internal
+    deploy:
+      labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.rule=Host(`{{traefik_app_name}}.{{app_swarm_domain_name}}`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.traefik-auth.basicauth.users={{traefikpassword.stdout}}"
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secure.rule=Host(`{{traefik_app_name}}.{{app_swarm_domain_name}}`)"
+      - "traefik.http.services.traefik-secure.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=cloudflare"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main={{app_swarm_domain_name}}"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.{{app_swarm_domain_name}}"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+      # Dummy service for Swarm port detection. The port can be any valid integer value.
+      - "traefik.http.services.dummy-svc.loadbalancer.server.port=9999"
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+    logging:
+      driver: "loki"
+      options:
+        loki-url: "{{loki_url}}"
+        loki-retries: '5'
+        loki-batch-size: '400'
+
+networks:
+  {{traefik_network_name}}:
+    driver: overlay
+    attachable: true
+    name: {{traefik_network_name}}
+  traefik_internal:
+    driver: overlay
+    attachable: true
+    internal: true
+    name: traefik_internal

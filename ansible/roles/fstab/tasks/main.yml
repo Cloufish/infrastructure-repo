@@ -1,0 +1,136 @@
+---
+- name: Install cifs-utils
+  become: true
+  apt:
+    state: present
+    pkg:
+      - cifs-utils
+      - samba-client
+    update_cache: true
+
+- name: Wait for server to restart
+  become: true
+  reboot:
+    reboot_timeout: "{{ DELAY_VAL }}"
+  ignore_errors: true
+
+- name: Check if /etc/samba directory is present
+  become: true
+  file:
+    path: /etc/samba
+    state: directory
+    mode: "0755"
+
+- name: Copy smb-opts.conf
+  become: true
+  template:
+    src: servershare.j2
+    dest: /etc/samba/servershare.conf
+    mode: "0600"
+
+##########################################
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/Emby
+    state: directory
+
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/Git
+    state: directory
+
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/Backup-TrueNAS
+    state: directory
+
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/Kiwix
+    state: directory
+
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/NextCloud
+    state: directory
+
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/Immersion
+    state: directory
+
+- name: Check If mount point exists
+  become: true
+  file:
+    path: /media/Containers
+    state: directory
+##########################################
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/Git/
+    path: /media/Git
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/Backup-TrueNAS/
+    path: /media/Backup-TrueNAS
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/Emby/
+    path: /media/Emby
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/Kiwix/
+    path: /media/Kiwix
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/NextCloud/
+    path: /media/NextCloud
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/Immersion/
+    path: /media/Immersion
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+
+- name: Mount network Share
+  become: true
+  mount:
+    src: //truenas.home/Containers/
+    path: /media/Containers
+    fstype: cifs
+    opts: "vers=3,credentials=/etc/samba/servershare.conf,uid=1000,gid=1000"
+    state: mounted
+##########################################

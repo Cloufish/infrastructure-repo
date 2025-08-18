@@ -1,0 +1,19 @@
+- name: Install ddclient
+  become: true
+  apt:
+    pkg:
+    - ddclient
+
+- name: Enable ddclient
+  become: true
+  systemd:
+    name: ddclient
+    enabled: true
+    state: started
+
+- name: Copy ddclient conf
+  become: true
+  template:
+    src: "ddclient.j2"
+    dest: "/etc/ddclient.conf"
+    mode: '0755'
