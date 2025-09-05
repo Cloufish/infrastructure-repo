@@ -11,7 +11,7 @@ device = "cuda"
 language = "de"
 
 # -------- Helpers --------
-def format_timestamp(seconds: float) -> str: # Timestamps .srt
+def format_timestamp(seconds: float) -> str:
     """Convert seconds to SRT timestamp format: HH:MM:SS,mmm"""
     milliseconds = int(seconds * 1000)
     hours = milliseconds // 3600000
