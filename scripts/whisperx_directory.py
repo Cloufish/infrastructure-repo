@@ -7,7 +7,7 @@ output_dir = input_dir
 extensions = [".mp3", ".wav", ".m4a", ".mp4", ".flac", ".mkv"]
 model_name = "large-v3"
 device = "cuda"
-language = "de"
+language_code = "de"
 
 # -------- Helpers --------
 def format_timestamp(seconds: float) -> str:
@@ -38,7 +38,7 @@ for root, _, files in os.walk(input_dir):
 
             print(f"🔊 Transcribing: {filepath}")
             audio = whisperx.load_audio(filepath)
-            result = model.transcribe(audio)
+            result = model.transcribe(audio, language=language_code)
 
             # (Optional) align
             model_a, metadata = whisperx.load_align_model(language_code=result["language"], device=device)
